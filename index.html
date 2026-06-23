@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>รายงานคุณภาพอากาศ (AQI) 77 จังหวัด | ประเทศไทย</title>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="header-content">
+                <h1>สภาพอากาศ 77 จังหวัด 🇹🇭</h1>
+                <p>รายงานคุณภาพอากาศ (AQI) และมลพิษ PM2.5 ทั่วประเทศไทย</p>
+                <div id="live-badge" class="live-badge loading">
+                    <span class="pulse-dot"></span>
+                    <span id="data-source-text">กำลังดึงข้อมูล Live API...</span>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <div class="view-toggle">
+                    <button id="btn-list-view" class="toggle-btn active">📋 แบบรายการ</button>
+                    <button id="btn-map-view" class="toggle-btn">🗺️ แผนที่</button>
+                    <button id="btn-knowledge" class="toggle-btn">ℹ️ ความรู้เรื่องฝุ่น</button>
+                    <button id="btn-gps" class="toggle-btn gps-btn">📍 ตำแหน่งของฉัน</button>
+                    <button id="btn-theme-toggle" class="toggle-btn theme-btn">🌙 โหมดมืด</button>
+                </div>
+                
+                <div class="sort-control">
+                    <label for="sort-select">เรียงลำดับ:</label>
+                    <select id="sort-select">
+                        <option value="best">อากาศดีสุด ➔ แย่สุด</option>
+                        <option value="worst">อากาศแย่สุด ➔ ดีสุด</option>
+                        <option value="name">ชื่อจังหวัด (ก-ฮ)</option>
+                    </select>
+                </div>
+                <div class="search-control">
+                    <input type="text" id="search-input" placeholder="ค้นหาจังหวัด...">
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div class="aqi-legend">
+                <div class="legend-item"><span class="color-dot good"></span> 0-50 ดี</div>
+                <div class="legend-item"><span class="color-dot moderate"></span> 51-100 ปานกลาง</div>
+                <div class="legend-item"><span class="color-dot sensitive"></span> 101-150 เริ่มมีผลกระทบ</div>
+                <div class="legend-item"><span class="color-dot unhealthy"></span> 151-200 มีผลกระทบ</div>
+                <div class="legend-item"><span class="color-dot very-unhealthy"></span> 201-300 แย่มาก</div>
+                <div class="legend-item"><span class="color-dot hazardous"></span> 300+ อันตราย</div>
+            </div>
+
+            <!-- List View Container -->
+            <div class="cards-container" id="provinces-container">
+                <!-- Data will be populated here via JavaScript -->
+            </div>
+            
+            <!-- Map View Container -->
+            <div class="map-container hidden" id="map-container">
+                <!-- Heatmap Toggle Overlay -->
+                <div class="map-overlay-controls">
+                    <span class="toggle-label">🔥 แผนที่ความร้อน</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="heatmap-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <!-- Heatmap Legend (Scale) -->
+                <div class="heat-scale-legend active" id="heat-scale-legend">
+                    <div class="scale-title">ระดับความรุนแรง AQI (Heatmap)</div>
+                    <div class="scale-labels">
+                        <span>0</span>
+                        <span>50</span>
+                        <span>100</span>
+                        <span>150</span>
+                        <span>200</span>
+                        <span>300+</span>
+                    </div>
+                    <div class="scale-gradient"></div>
+                </div>
+
+                <div id="map"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal สำหรับแสดงรายละเอียดจังหวัด -->
+    <div class="modal-overlay" id="detail-modal">
+        <div class="modal-content">
+            <button class="close-btn" id="close-modal">&times;</button>
+            <div class="modal-header" id="modal-header">
+                <h2 id="modal-province">ชื่อจังหวัด</h2>
+                <div class="modal-aqi-wrapper">
+                    <div class="modal-aqi-badge" id="modal-aqi-badge">
+                        <span id="modal-aqi-value">150</span>
+                        <span class="aqi-label">AQI (US)</span>
+                    </div>
+                    <div class="modal-trend" id="modal-trend"></div>
+                </div>
+            </div>
+            <div class="modal-body scrollable-body">
+                <div class="modal-status" id="modal-status">ระดับผลกระทบ</div>
+                
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <span class="detail-label">ฝุ่น PM2.5</span>
+                        <span class="detail-value"><span id="modal-pm25"></span> <small>µg/m³</small></span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">ฝุ่น PM10</span>
+                        <span class="detail-value"><span id="modal-pm10"></span> <small>µg/m³</small></span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">🌡️ อุณหภูมิ</span>
+                        <span class="detail-value"><span id="modal-temp"></span> <small>°C</small></span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">💧 ความชื้น / 💨 ลม</span>
+                        <span class="detail-value" style="font-size: 1rem;"><span id="modal-humidity"></span><small>%</small> / <span id="modal-wind"></span><small>km/h</small></span>
+                    </div>
+                </div>
+
+                <!-- กราฟพยากรณ์ -->
+                <div class="forecast-section">
+                    <h3>📈 แนวโน้มฝุ่น PM2.5 (ย้อนหลัง 12 ชม. & ล่วงหน้า 24 ชม.)</h3>
+                    <div class="chart-wrapper">
+                        <div id="chart-loader" class="chart-loader">กำลังโหลดข้อมูลพยากรณ์...</div>
+                        <canvas id="forecast-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="detail-grid" style="margin-top: 0.5rem;">
+                    <div class="detail-item" style="background: transparent; padding: 0;">
+                        <span class="detail-label">อัปเดตล่าสุด</span>
+                        <span class="detail-value" id="modal-time" style="font-size: 0.85rem; color: var(--text-muted);"></span>
+                    </div>
+                    <div class="detail-item" style="background: transparent; padding: 0;">
+                        <span class="detail-label">พิกัด</span>
+                        <span class="detail-value" id="modal-coords" style="font-size: 0.85rem; color: var(--text-muted);"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal สำหรับให้ความรู้เรื่องฝุ่น -->
+    <div class="modal-overlay" id="knowledge-modal">
+        <div class="modal-content knowledge-content">
+            <button class="close-btn" id="close-knowledge-modal">&times;</button>
+            <div class="modal-header">
+                <h2>💡 ความรู้เรื่องฝุ่นและคุณภาพอากาศ</h2>
+            </div>
+            <div class="modal-body scrollable-body">
+                
+                <div class="knowledge-section">
+                    <h3>1. AQI, PM2.5 และ PM10 คืออะไร?</h3>
+                    <p><strong>AQI (Air Quality Index)</strong> คือ ดัชนีคุณภาพอากาศ เป็นตัวเลขที่ใช้สื่อสารให้ประชาชนเข้าใจง่ายๆ ว่าอากาศดีหรือแย่แค่ไหน โดยนำเอาสารมลพิษ 6 ชนิดมาคำนวณ ยิ่งตัวเลข AQI สูง แปลว่าอากาศยิ่งแย่</p>
+                    <p><strong>PM2.5</strong> คือ ฝุ่นละอองขนาดเล็กมาก (ไม่เกิน 2.5 ไมครอน) เล็กกว่าเส้นผมมนุษย์ถึง 20 เท่า <b>อันตรายที่สุด!</b> เพราะสามารถทะลุถุงลมปอดและซึมเข้าสู่กระแสเลือดได้โดยตรง</p>
+                    <p><strong>PM10</strong> คือ ฝุ่นละอองขนาดไม่เกิน 10 ไมครอน (ใหญ่กว่า PM2.5) มักเป็นฝุ่นหยาบจากการก่อสร้าง หรือควันรถ จะถูกกรองไว้ได้บางส่วนที่ขนจมูกและหลอดลม</p>
+                </div>
+
+                <div class="knowledge-section">
+                    <h3>2. AQI คำนวณมายังไง?</h3>
+                    <p>ระบบจะนำค่าความเข้มข้นของมลพิษแต่ละชนิดที่วัดได้ (เช่น PM2.5 วัดได้ 55 µg/m³) ไปเข้าสูตรคำนวณเทียบกับเกณฑ์มาตรฐาน (เว็บนี้ใช้เกณฑ์มาตรฐานของสหรัฐอเมริกา US EPA)</p>
+                    <p>มลพิษตัวไหนที่คำนวณออกมาแล้ว <strong>ได้ค่า AQI ย่อยสูงที่สุด</strong> จะถูกดึงมาใช้เป็นค่า AQI รวมของวันนั้น เพื่อเป็นการเตือนภัยขั้นสูงสุด</p>
+                </div>
+
+                <div class="knowledge-section">
+                    <h3>3. ค่าเท่าไหร่อันตราย & วิธีปฏิบัติตัว</h3>
+                    
+                    <div class="health-guideline good">
+                        <span class="color-dot good"></span> <strong>0-50 (สีเขียว - ดี)</strong>
+                        <p>อากาศสดชื่น บริสุทธิ์ สามารถทำกิจกรรมและออกกำลังกายกลางแจ้งได้ตามปกติ 🏃‍♂️</p>
+                    </div>
+                    
+                    <div class="health-guideline moderate">
+                        <span class="color-dot moderate"></span> <strong>51-100 (สีเหลือง - ปานกลาง)</strong>
+                        <p>คุณภาพอากาศที่ยอมรับได้ คนทั่วไปทำกิจกรรมได้ปกติ แต่ผู้ที่มีโรคประจำตัวทางเดินหายใจควรเริ่มเฝ้าระวังอาการ</p>
+                    </div>
+                    
+                    <div class="health-guideline sensitive">
+                        <span class="color-dot sensitive"></span> <strong>101-150 (สีส้ม - เริ่มมีผลกระทบ)</strong>
+                        <p><b>กลุ่มเสี่ยง</b> (เด็ก คนชรา ผู้ป่วยโรคปอด/หัวใจ) ควรงดกิจกรรมกลางแจ้ง และสวมหน้ากาก คนทั่วไปยังพอทำกิจกรรมได้แต่ควรลดเวลาลง</p>
+                    </div>
+                    
+                    <div class="health-guideline unhealthy">
+                        <span class="color-dot unhealthy"></span> <strong>151-200 (สีแดง - มีผลกระทบ)</strong>
+                        <p>ทุกคนควรหลีกเลี่ยงการออกกำลังกายหรือทำงานหนักกลางแจ้ง หากต้องออกไปข้างนอก <b>ต้องสวมหน้ากาก N95</b> 😷</p>
+                    </div>
+                    
+                    <div class="health-guideline very-unhealthy">
+                        <span class="color-dot very-unhealthy"></span> <strong>201-300 (สีม่วง - แย่มาก)</strong>
+                        <p>งดกิจกรรมกลางแจ้งเด็ดขาด! ควรอยู่แต่ในอาคาร ปิดประตูหน้าต่างให้มิดชิด และเปิดเครื่องฟอกอากาศ</p>
+                    </div>
+                    
+                    <div class="health-guideline hazardous">
+                        <span class="color-dot hazardous"></span> <strong>300+ (สีเลือดหมู - อันตราย)</strong>
+                        <p><b>ระดับวิกฤต!</b> อันตรายร้ายแรงต่อสุขภาพ ไม่ควรออกจากอาคารเด็ดขาด หากจำเป็นต้องใช้เครื่องช่วยหายใจชนิดพิเศษ 🆘</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Template for a province card -->
+    <template id="card-template">
+        <div class="province-card">
+            <div class="card-header">
+                <h2 class="province-name"></h2>
+                <div class="aqi-badge-wrapper">
+                    <div class="aqi-badge">
+                        <span class="aqi-value"></span>
+                        <span class="aqi-label">AQI (US)</span>
+                    </div>
+                    <div class="trend-indicator"></div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="status-text"></div>
+                <div class="pollutant-info">
+                    <span class="pollutant-name">PM2.5</span>
+                    <span class="pollutant-value"></span>
+                </div>
+                <div class="weather-mini">
+                    <span title="อุณหภูมิ">🌡️ <span class="temp-value"></span>°C</span>
+                    <span title="ความชื้น">💧 <span class="humidity-value"></span>%</span>
+                    <span title="ความเร็วลม">💨 <span class="wind-value"></span> <small>km/h</small></span>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Leaflet Heatmap Plugin -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script src="script.js"></script>
+</body>
+</html>
